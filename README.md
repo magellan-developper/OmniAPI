@@ -49,3 +49,4 @@ Stats
 
 TODO:
 - Fix aiohttp limit
+- Fix client closing

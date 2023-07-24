@@ -37,6 +37,7 @@ class BaseClient(ABC):
     """Base Class for API Clients"""
     logger = logging.getLogger(__name__)
     static_counter = -1
+    clients = []
 
     def __init__(self,
                  base_url: str,
@@ -149,12 +150,14 @@ class BaseClient(ABC):
                 logger=self.logger,
                 **session_config.to_dict(),
             )
+            self.clients.append(client)
         elif session_config is not None:
             client = RetryClient(
                 retry_options=api_config.retry_options,
                 logger=self.logger,
                 **session_config.to_dict(),
             )
+            self.clients.append(client)
         else:
             client = self.client_state[api_config.base_url].client
 
