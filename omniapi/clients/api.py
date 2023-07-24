@@ -1,45 +1,21 @@
-
-import asyncio
-import hashlib
-import json
-import mimetypes
-import time
-import typing
-import os
-from abc import ABCMeta, abstractmethod
-from pathlib import Path
-from typing import Any, Optional
-from urllib.parse import urljoin, unquote_to_bytes
-from enum import Enum, auto
-from dataclasses import dataclass
-import aiofiles
-import aiohttp
-import aiohttp_retry
-import structlog
-from tqdm.asyncio import tqdm_asyncio
-
-from omniapi.services.api.base.config import BaseClientConfig, FileNameMode
-
-structlog.configure(processors=[structlog.processors.JSONRenderer()])
-
-
-
+from omniapi.clients.base import BaseClient
 
 
 class APIClient(BaseClient):
-    def __init__(self, base_url: str, config: BaseClientConfig, api_keys: Optional[list[str]] = None):
-        super().__init__(base_url, config, api_keys=api_keys)
+    def __init__(self, base_url: str, *args, **kwargs):
+        super().__init__(base_url, *args, **kwargs)
 
-    async def _make_request_setup(self):
-        api_key = await self.api_keys_queue.get() if self.api_keys_queue is not None else None
-        if api_key is not None:
-            assert isinstance(self.semaphores, dict)
-            await self._sleep_for_rate_limit(api_key)
-            await self.semaphores[api_key].acquire()
-            self.api_keys_queue.put_nowait(api_key)
+    async def _make_request_setup(self, url: str):
+        state = self.get_state(url)
+
+        if state.api_keys_queue is None:
+            await self.sleep_for_rate_limit(state)
         else:
-            await self._sleep_for_rate_limit()
-        return api_key
+            api_key = state.api_keys_queue.get()
+            await self.sleep_for_rate_limit(state, api_key)
+            await state.semaphores[api_key].acquire()
+            state.api_keys_queue.put_nowait(api_key)
+            return api_key
 
     @staticmethod
     async def fetch_content(result: Result):
@@ -64,7 +40,7 @@ class APIClient(BaseClient):
         modified_content = await self.process_request_callback(result_type, content)
         if modified_content is None:
             modified_content = content
-        yield result_type, modified_content
+        yield modified_content
 
     async def _make_request_cleanup(self, api_key):
         if api_key:

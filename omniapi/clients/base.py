@@ -1,46 +1,35 @@
 import asyncio
 import datetime
-import json
 import logging
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from itertools import cycle
 from pathlib import Path
 from ssl import SSLContext
-from typing import Optional, Union, Sequence, Any
-from urllib.parse import urljoin
+from typing import Optional, Union, Sequence, Any, Dict, Callable, Coroutine
+from urllib.parse import urlparse, urlunparse
 
-import aiofiles
 import aiohttp
-import aiohttp_retry
 from aiohttp import BasicAuth, BaseConnector
 from aiohttp.abc import AbstractCookieJar
 from aiohttp_retry import RetryClient
-from tqdm.asyncio import tqdm_asyncio
+from tqdm import tqdm
 
 from omniapi.utils.config import APIConfig, SessionConfig
 from omniapi.utils.download import FileNameMode
+from omniapi.utils.exception import raise_exception
 from omniapi.utils.helper import numeric, get_wait_time
-from omniapi.utils.types import PathType
-
-
-@dataclass
-class ClientState:
-    client: aiohttp_retry.RetryClient
-    api_keys_queue: Optional[asyncio.Queue]
-    semaphores: dict
-    last_request_time: dict
-    wait_time: float
+from omniapi.utils.result import Result
+from omniapi.utils.state import ClientState
+from omniapi.utils.types import PathType, OptionalDictSequence, StringSequence
 
 
 class BaseClient(ABC):
     """Base Class for API Clients"""
     logger = logging.getLogger(__name__)
-    static_counter = -1
     clients = []
 
     def __init__(self,
-                 base_url: str,
                  max_requests_per_interval: Union[Sequence[numeric], numeric] = 5,
                  interval_unit: Union[Sequence[datetime.timedelta], datetime.timedelta] = datetime.timedelta(seconds=1),
                  max_concurrent_requests: int = 1,
@@ -64,14 +53,11 @@ class BaseClient(ABC):
                  proxies: Optional[Sequence[str]] = None,
                  ):
 
-        self.base_url = base_url
-
         if files_download_directory is not None:
             files_download_directory = Path(files_download_directory)
             files_download_directory.mkdir(exist_ok=True, parents=True)
 
         api_config = APIConfig(
-            base_url=base_url,
             max_requests_per_interval=max_requests_per_interval,
             interval_unit=interval_unit,
             max_concurrent_requests=max_concurrent_requests,
@@ -98,11 +84,11 @@ class BaseClient(ABC):
         )
 
         # None represents global config / endpoint
-        self.endpoint_configs: dict[str, APIConfig] = dict()
-        self.client_state: dict[str, ClientState] = dict()
+        self.endpoint_configs: Dict[Optional[str], APIConfig] = dict()
+        self.endpoint_states: Dict[Optional[str], ClientState] = dict()
 
-        self.client_state[self.base_url] = self.initialize_client(api_config, session_config)
-        self.endpoint_configs[self.base_url] = api_config
+        self.endpoint_states[None] = self.initialize_client(api_config, session_config)
+        self.endpoint_configs[None] = api_config
 
         self.display_progress_bar = display_progress_bar
 
@@ -119,7 +105,7 @@ class BaseClient(ABC):
         )
 
     def get_client(self, endpoint: Optional[str] = None):
-        return self.client_state[endpoint].client
+        return self.endpoint_states[endpoint].client
 
     def initialize_client(self, api_config: APIConfig,
                           session_config: Optional[SessionConfig] = None):
@@ -142,7 +128,7 @@ class BaseClient(ABC):
 
         wait_time = get_wait_time(api_config, self.logger)
 
-        if not self.client_state:
+        if not self.endpoint_states:
             if session_config is None:
                 session_config = SessionConfig()
             client = RetryClient(
@@ -159,7 +145,7 @@ class BaseClient(ABC):
             )
             self.clients.append(client)
         else:
-            client = self.client_state[api_config.base_url].client
+            client = self.endpoint_states[api_config.base_url].client
 
         return ClientState(
             client=client,
@@ -169,19 +155,21 @@ class BaseClient(ABC):
             wait_time=wait_time,
         )
 
-    def add_settings(self, base_url: str, *, max_requests_per_interval=None,
+    def add_settings(self, url: str, *, max_requests_per_interval=None,
                      interval_unit=None, max_concurrent_requests=None, api_keys=None, allow_redirects=None,
                      max_redirects=None, timeout=None, files_download_directory=None,
                      file_name_mode=None, error_strategy=None, display_progress_bar=None,
                      auth=None, connector=None, cookie_jar=None, cookies=None, headers=None, ssl=None,
                      trust_env=None, proxy=None, proxy_auth=None, proxies=None,
                      api_config: Optional[APIConfig] = None, session_config: Optional[SessionConfig] = None):
+        base_url = urlparse(url).netloc
         if base_url in self.endpoint_configs:
-            raise RuntimeError(f"Base URL {base_url} has already been configured!")
+            raise_exception(f"Base URL {base_url} has already been configured, overwriting settings...",
+                            exception_type='warning', logger=self.logger)
 
         # API Config Settings
         if api_config is None:
-            api_config = APIConfig(base_url=base_url)
+            api_config = APIConfig()
         if max_requests_per_interval is not None:
             api_config.max_requests_per_interval = max_requests_per_interval
         if interval_unit is not None:
@@ -210,7 +198,7 @@ class BaseClient(ABC):
         # Session Config Settings
         if all(x is None for x in [auth, connector, cookie_jar, cookies, headers,
                                    ssl, trust_env, proxy, proxy_auth, proxies]) and session_config is None:
-            self.client_state[base_url] = self.initialize_client(api_config)
+            self.endpoint_states[base_url] = self.initialize_client(api_config)
             return
         if session_config is None:
             session_config = SessionConfig()
@@ -234,115 +222,98 @@ class BaseClient(ABC):
             session_config.proxy_auth = proxy_auth
         if proxies is not None:
             session_config.proxies = proxies
-        self.client_state[base_url] = self.initialize_client(api_config)
-
-    async def _sleep_for_rate_limit(self, base_url, api_key=None):
-        client_state = self.client_state[base_url]
-        semaphore = client_state.semaphores[api_key]
-        async with semaphore:
-            last_request_time = client_state.last_request_time[api_key]
-            elapsed = time.monotonic() - last_request_time
-            if client_state.wait_time > 0 and (sleep_time := max(client_state.wait_time - elapsed, 0)) > 0:
-                await asyncio.sleep(sleep_time)
-            client_state.last_request_time[api_key] = time.monotonic()
+        self.endpoint_states[base_url] = self.initialize_client(api_config)
 
     @staticmethod
-    def get_hash(method: str, endpoint: str, hash_items):
-        return hash(hash(method) + hash(endpoint) + hash(hash_items))
+    async def sleep_for_rate_limit(state: ClientState, api_key=None):
+        semaphore = state.semaphores[api_key]
+        async with semaphore:
+            last_request_time = state.last_request_time[api_key]
+            elapsed = time.monotonic() - last_request_time
+            if state.wait_time > 0 and (sleep_time := max(state.wait_time - elapsed, 0)) > 0:
+                await asyncio.sleep(sleep_time)
+            state.last_request_time[api_key] = time.monotonic()
+
+    @staticmethod
+    def get_hash(method: str, url: str, hash_items):
+        return hash(hash(method) + hash(url) + hash(hash_items))
 
     @abstractmethod
-    async def request_callback(self, result: Result, endpoint: str, params: dict, data: dict, setup_info):
+    async def request_callback(self, result: Result, url: str, data: dict, setup_info):
         ...
 
-    async def _make_request_setup(self) -> Any:
+    async def _make_request_setup(self, base_url) -> Any:
         pass
 
     async def _make_request_cleanup(self, setup_info):
         pass
 
-    def setup_request(self, endpoint, headers, params, data, setup_info):
+    def setup_request(self, url: str, headers: dict, data: dict, setup_info: Any):
         pass
 
-    async def _make_request(self, method: str, endpoint: str, params: dict = None, data: dict = None):
-        new_requests = []
-        url = self._create_url(endpoint)
-
-        headers = {}
-        params = {} if params is None else params
-        data = {} if data is None else data
-
-        setup_info = await self._make_request_setup()
-        hash_items = self.setup_request(endpoint, headers, params, data, setup_info)
-        if (request_hash := self.get_hash(method, endpoint, hash_items)) not in self.visited:
-            self.visited.add(request_hash)
+    def get_state(self, url: str):
+        if (base_url := urlparse(url).netloc) in self.endpoint_states:
+            return self.endpoint_states[base_url]
         else:
-            return
-        try:
-            async with self.client.request(method, url, headers=headers, params=params, json=data,
-                                           timeout=self.timeout) as response:
-                response.raise_for_status()
-                response_result = Result(response, self.config)
-                # noinspection PyTypeChecker
-                async for temp in self.request_callback(response_result, endpoint, params, data, setup_info):
-                    if temp is None:
-                        continue
-                    result_type, result = temp
-                    match result_type:
-                        case ResultType.JSON:
-                            self.stats.json += 1
-                            if self.config.export_results_path is not None:
-                                self.results['json'].append(result)
-                        case ResultType.TEXT:
-                            self.stats.text += 1
-                            if self.config.export_results_path is not None:
-                                self.results['text'].append(result)
-                        case ResultType.FILE:
-                            self.stats.text += 1
-                            if self.config.export_results_path is not None:
-                                self.results['files'].append(result)
-                        case ResultType.REQUEST:
-                            self.stats.new_requests += 1
-                            new_requests.append(result)
-                        case _:
-                            self.stats.wrong_types += 1
-                            raise RuntimeWarning(f"Result {result} cannot be processed!")
+            return self.endpoint_states[None]
 
+    def get_config(self, url: str):
+        if (base_url := urlparse(url).netloc) in self.endpoint_configs:
+            return self.endpoint_configs[base_url]
+        else:
+            return self.endpoint_configs[None]
+
+    async def _make_request(self, method: str, url: str, data: dict = None):
+        new_requests = []
+
+        # Setup headers
+        headers = {}
+        data = data or {}
+
+        setup_info = await self._make_request_setup(url)
+        # noinspection PyNoneFunctionAssignment
+        hash_items = self.setup_request(url, headers, data, setup_info)
+        request_hash = self.get_hash(method, url, hash_items)
+        if request_hash in self.visited:
+            return
+        self.visited.add(request_hash)
+        request_params = {'params': data, 'json': {}} if method == "GET" else {'params': {}, 'json': data}
+
+        state = self.get_state(url)
+        config = self.get_config(url)
+
+        parsed_url = urlparse(url)
+        try:
+            async with state.client.request(
+                    method, url, headers=headers, **request_params, timeout=config.timeout) as response:
+                response_result = Result(response, config, state, self.logger)
+                # noinspection PyTypeChecker
+                async for result in self.request_callback(response_result, url, data, setup_info):
+                    new_method, new_url, new_data = result
+                    new_parsed_url = urlparse(new_url)
+                    if new_parsed_url.netloc == '':
+                        # noinspection PyProtectedMember
+                        new_url = urlunparse(new_parsed_url._replace(scheme=parsed_url.scheme, netloc=parsed_url.netloc))
+                    new_requests.append((new_method, new_url, new_data))
         except aiohttp.ClientResponseError as e:
-            self.logger.error("request_failed", method=method, url=url, data=data, error=str(e))
-            self.stats.failed_requests += 1
+            self.logger.error(
+                {"message": "request_failed", "method": method, "url": url, "data": data, "error": str(e)})
         except aiohttp.ClientConnectorError as e:
-            self.logger.error("failed_connection", method=method, url=url, data=data, error=str(e))
-            self.stats.failed_connections += 1
+            self.logger.error(
+                {"message": "failed_connection", "method": method, "url": url, "data": data, "error": str(e)})
         finally:
             await self._make_request_cleanup(setup_info)
-            self.stats.total += 1
-            for new_method, new_endpoint, new_data in new_requests:
-                self.tasks += [asyncio.create_task(method(endpoint, data)) for method, endpoint, data in
-                               self.package_requests(new_method, new_endpoint, new_data)]
+            for new_method, new_url, new_data in new_requests:
+                self.tasks += [asyncio.create_task(self.get_request_handler(method)(url, data)) for method, url, data in
+                               self.package_requests(new_method, new_url, new_data)]
 
-    async def get(self, endpoint: str, params: dict = None) -> Any:
-        await self._make_request("GET", endpoint, params=params)
+    async def get(self, url: str, params: dict = None):
+        await self._make_request("GET", url, data=params)
 
-    async def post(self, endpoint: str, data: dict = None) -> Any:
-        await self._make_request("POST", endpoint, data=data)
+    async def post(self, url: str, data: dict = None):
+        await self._make_request("POST", url, data=data)
 
-    @staticmethod
-    async def write_json(filename, data):
-        async with aiofiles.open(filename, mode='w') as f:
-            await f.write(json.dumps(data))
-
-    async def export_results(self, results):
-        export_path = self.config.export_results_path
-        if export_path is None:
-            return
-        export_path = Path(self.config.export_results_path)
-        if export_path.exists():
-            self.logger.error(f"File {export_path} already exists! Overwriting file...")
-
-        export_path.parent.mkdir(exist_ok=True, parents=True)
-        await self.write_json(self.config.export_results_path, results)
-
-    def get_request_handler(self, method):
+    def get_request_handler(self, method) -> Callable[[str, dict], Coroutine]:
         method = method.upper()
         if method == 'GET':
             return self.get
@@ -351,44 +322,43 @@ class BaseClient(ABC):
         else:
             raise ValueError("Method must be either GET or POST!")
 
-    def package_requests(self, methods: Union[str, Sequence[str]],
-                         endpoints: Union[str, Sequence[str]],
-                         data_list: Optional[Union[Sequence[dict], dict]]):
-        if isinstance(methods, str):
-            methods = [self.get_request_handler(methods)]
-        else:
-            methods = list(map(self.get_request_handler, methods))
+    @staticmethod
+    def package_requests(methods: StringSequence, endpoints: StringSequence,
+                         data_list: OptionalDictSequence):
+        methods = [methods] if isinstance(methods, str) else methods
         endpoints = [endpoints] if isinstance(endpoints, str) else endpoints
         data_list = [data_list] if isinstance(data_list, dict) or data_list is None else data_list
         max_length = max(len(methods), len(endpoints), len(data_list))
         assert {len(methods), len(endpoints), len(data_list)}.issubset({1, max_length})
 
-        if len(methods) != max_length:
-            methods *= max_length
-        if len(endpoints) != max_length:
-            endpoints *= max_length
-        if len(data_list) != max_length:
-            data_list *= max_length
-        for method, endpoint, data in zip(methods, endpoints, data_list):
-            yield method, endpoint, data
+        for _ in range(max_length):
+            yield next(cycle(methods)), next(cycle(endpoints)), next(cycle(data_list))
 
-    async def schedule_requests(self, methods: Union[str, list[str]],
-                                endpoints: Union[str, list[str]],
-                                data_list: Optional[Union[list[dict], dict]]):
-        tasks = [asyncio.create_task(method(endpoint, data)) for method, endpoint, data in
-                 self.package_requests(methods, endpoints, data_list)]
-        self.static_counter += 1
+    async def schedule_requests(self, methods: StringSequence, endpoints: StringSequence,
+                                data_list: OptionalDictSequence):
+        tasks = [asyncio.create_task(self.get_request_handler(method)(endpoint, data))
+                 for method, endpoint, data in self.package_requests(methods, endpoints, data_list)]
 
-        while tasks:
-            if self.display_progress_bar:
-                await tqdm_asyncio.gather(*tasks, position=self.static_counter)
-            else:
+        if self.display_progress_bar:
+            pbar = tqdm()
+            while tasks:
+                for task in asyncio.as_completed(tasks):
+                    await task
+                    pbar.update(1)
+                tasks, self.tasks = self.tasks, []
+
+            pbar.close()
+        else:
+            while tasks:
                 await asyncio.gather(*tasks)
-            tasks, self.tasks = self.tasks, []
+                tasks, self.tasks = self.tasks, []
 
-    async def run(self, methods: Union[str, list[str]],
-                  endpoints: Union[str, list[str]],
-                  data_list: Optional[Union[tuple[dict], list[dict], dict]]):
+    async def run(self, methods: StringSequence, endpoints: StringSequence, data_list: OptionalDictSequence):
         await self.schedule_requests(methods, endpoints, data_list)
-        await self.export_results(self.results)
-        return self.results
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        for client in self.clients:
+            client.close()

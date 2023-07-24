@@ -1,5 +1,8 @@
+import json
 import logging
 from typing import Union, Sequence, Optional
+
+import aiofiles
 
 from omniapi.utils.config import APIConfig
 from omniapi.utils.exception import raise_exception
@@ -51,3 +54,8 @@ def get_wait_time(config: APIConfig,
     if isinstance(interval_unit, Sequence):
         return max(get_single_wait_time(max_requests_per_interval, unit) for unit in interval_unit)
     return get_single_wait_time(max_requests_per_interval, interval_unit)
+
+
+async def write_json(filename, data):
+    async with aiofiles.open(filename, mode='w') as f:
+        await f.write(json.dumps(data))

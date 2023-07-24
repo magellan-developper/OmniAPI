@@ -18,3 +18,5 @@ setuptools==68.0.0
 structlog==23.1.0
 tqdm==4.65.0
 yarl==1.9.2
+
+APScheduler~=3.10.1

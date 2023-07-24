@@ -21,7 +21,7 @@ class BaseConfig(metaclass=ABCMeta):
 
 @dataclass
 class APIConfig(BaseConfig):
-    base_url: str
+    base_url: Optional[str] = None
 
     # Request Rate
     max_requests_per_interval: Union[Sequence[numeric], numeric] = 5

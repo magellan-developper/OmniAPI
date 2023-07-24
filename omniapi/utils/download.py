@@ -39,7 +39,7 @@ def get_file_name(url: Union[str, URL], strategy: FileNameMode):
         return hashlib.sha1(unquote_to_bytes(url)).hexdigest()
     elif strategy == FileNameMode.FILE_NAME:
         return os.path.basename(url)
-    else: #TODO
+    else:  # TODO
         raise ValueError("Invalid strategy chosen!")
 
 
@@ -75,8 +75,11 @@ def get_file_extension(response: ClientResponse,
         if extension:
             return extension
         else:
-            raise_exception(f"Extension of Content-Type {content_type} not recognized!", exception_type='warning',
-                            logger=logger) # TODO
+            raise_exception(
+                f"Extension of Content-Type {content_type} not recognized!",
+                exception_type='warning',
+                logger=logger
+            )  # TODO
     path = urlparse(response.url.path).path
     extension = Path(path).suffix
     if extension:
@@ -85,7 +88,7 @@ def get_file_extension(response: ClientResponse,
 
 
 def get_file_path(response: ClientResponse,
-                  download_directory: Union[Path, str],
+                  download_directory: Path,
                   naming_strategy: FileNameMode,
                   logger: Optional[logging.Logger] = None) -> Path:
     """Gets the download path of the file from the response.
@@ -104,7 +107,7 @@ def get_file_path(response: ClientResponse,
     file_extension = get_file_extension(response, logger)
     file_path = file_name.with_suffix(file_extension)
     file_path = download_directory / file_path
-    if file_path.exists(): # TODO
+    if file_path.exists():  # TODO
         raise_exception(f"Overwriting existing file {file_path}", exception_type='warning', logger=logger)
     return file_path
 
@@ -112,23 +115,19 @@ def get_file_path(response: ClientResponse,
 async def download_file_to_path(response: ClientResponse,
                                 download_directory: Union[Path, str],
                                 naming_strategy: FileNameMode,
-                                base_path: Optional[Union[Path, str]] = None,
                                 logger: Optional[logging.Logger] = None):
     """
 
     :param response:
     :param download_directory:
     :param naming_strategy:
-    :param base_path
     :param logger:
     :return:
     """
+    download_directory = Path(download_directory)
     file_path = get_file_path(response, download_directory, naming_strategy, logger)
     checksum = await download_file(response, file_path)
-    if base_path is not None:
-        file_path = file_path.relative_to(base_path)
-    else:
-        file_path = file_path.name
+    file_path = file_path.relative_to(download_directory)
     return {
         "url": str(response.url),
         "path": file_path,
