@@ -1,22 +1,50 @@
-from enum import Enum
+import hashlib
 import mimetypes
-class ContentType(Enum):
-    HTML = "text/html"
-    PLAIN = "text/plain"
-    CSS = "text/css"
-    JSON = "application/json"
-    JAVASCRIPT = "application/javascript"
-    FORM_URLENCODED = "application/x-www-form-urlencoded"
-    XML = "application/xml"
-    YAML = "application/x-yaml"
-    PDF = "application/pdf"
-    JPEG = "image/jpeg"
-    PNG = "image/png"
-    GIF = "image/gif"
-    SVG = "image/svg+xml"
-    MP4 = "video/mp4"
-    MPEG = "video/mpeg"
-    ZIP = "application/zip"
+import os
+from pathlib import Path
 
-for c in ContentType:
-    print(mimetypes.guess_extension('application/gzip'))
+import pytest
+from aiohttp.client_reqrep import ClientResponse
+
+from omniapi.utils.config import APIConfig, FileNameStrategy
+from omniapi.utils.download import get_file_name, download_file, get_file_extension, get_file_path
+
+
+def test_get_file_name():
+    url = 'http://example.com/myfile.png'
+
+    assert len(get_file_name(url, FileNameStrategy.UNIQUE_ID)) == 36
+    assert len(get_file_name(url, FileNameStrategy.URL_HASH_MD5)) == 32
+    assert len(get_file_name(url, FileNameStrategy.URL_HASH_SHA1)) == 40
+    assert get_file_name(url, FileNameStrategy.FILE_NAME) == 'myfile.png'
+
+
+@pytest.mark.asyncio
+async def test_download_file():
+    data = b"fake data"
+    response = ClientResponse("GET", "http://example.com")
+    response.content = data
+    filename = "test_file"
+    expected_hash = hashlib.md5(data).hexdigest()
+
+    actual_hash = await download_file(response, filename)
+    assert actual_hash == expected_hash
+    assert os.path.exists(filename)
+    with open(filename, 'rb') as f:
+        assert f.read() == data
+    os.remove(filename)  # clean up
+
+
+def test_get_file_extension():
+    response = ClientResponse("GET", "http://example.com")
+    response.headers["Content-Type"] = "image/png"
+    assert get_file_extension(response, 'log') == mimetypes.guess_extension("image/png")
+
+
+def test_get_file_path():
+    response = ClientResponse("GET", "http://example.com/myfile.png")
+    config = APIConfig()
+    config.files_download_directory = "./"
+    config.file_name_mode = FileNameStrategy.FILE_NAME
+    path = get_file_path(response, config)
+    assert path == Path('./myfile.png')
