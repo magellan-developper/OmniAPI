@@ -1,18 +1,17 @@
 import hashlib
 import logging
 import mimetypes
-import uuid
 import os
-from yarl import URL
+import uuid
+from enum import Enum, auto
 from pathlib import Path
 from typing import Union, Optional
-
-import aiofiles
-
-from enum import Enum, auto
 from urllib.parse import unquote_to_bytes, urlparse
 
+import aiofiles
 from aiohttp.client_reqrep import ClientResponse
+from yarl import URL
+
 from omniapi.utils.exception import raise_exception
 
 

@@ -1,17 +1,16 @@
+import datetime
 import json
 import logging
+from pathlib import Path
 from typing import Union, Sequence, Optional
 
 import aiofiles
 
 from omniapi.utils.config import APIConfig
 from omniapi.utils.exception import raise_exception
-import datetime
-
-numeric = Union[int, float]
 
 
-def get_single_wait_time(max_requests_per_interval: numeric,
+def get_single_wait_time(max_requests_per_interval: Union[int, float],
                          interval: datetime.timedelta) -> float:
     """Gets the wait time, given a max_requests_per_interval and interval.
         If max_requests_per_interval is 0 or negative, the function returns a wait time of 0.
@@ -56,6 +55,6 @@ def get_wait_time(config: APIConfig,
     return get_single_wait_time(max_requests_per_interval, interval_unit)
 
 
-async def write_json(filename, data):
-    async with aiofiles.open(filename, mode='w') as f:
+async def write_json(path: Path, data):
+    async with aiofiles.open(path, mode='w') as f:
         await f.write(json.dumps(data))

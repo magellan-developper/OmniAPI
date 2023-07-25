@@ -1,49 +1,45 @@
+import logging
+from abc import ABC
+from typing import Optional
+
 from omniapi.clients.base import BaseClient
+from omniapi.utils.result import Result
 
 
-class APIClient(BaseClient):
-    def __init__(self, base_url: str, *args, **kwargs):
-        super().__init__(base_url, *args, **kwargs)
+class APIClient(BaseClient, ABC):
+    logger = logging.Logger(__name__)
 
-    async def _make_request_setup(self, url: str):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    async def make_request_setup(self, url: str):
         state = self.get_state(url)
 
         if state.api_keys_queue is None:
-            await self.sleep_for_rate_limit(state)
+            await self._sleep_for_rate_limit(state)
         else:
             api_key = state.api_keys_queue.get()
-            await self.sleep_for_rate_limit(state, api_key)
+            await self._sleep_for_rate_limit(state, api_key)
             await state.semaphores[api_key].acquire()
             state.api_keys_queue.put_nowait(api_key)
             return api_key
 
     @staticmethod
-    async def fetch_content(result: Result):
-        headers = result.response.headers
-        file_type = headers['Content-Type'].split(';')[0]
+    async def get_result_content(result: Result):
+        file_type = result.response.headers['Content-Type'].split(';')[0]
         if file_type == 'text/plain':
-            return await result.text()
+            result_type, content = await result.text()
         elif file_type == 'application/json':
-            return await result.json()
+            result_type, content = await result.json()
         else:
-            return await result.download()
+            result_type, content = await result.download()
+        return result_type, content
 
-    def setup_request(self, endpoint, headers, params, data, api_key):
-        if self.config.api_key_field is not None:
-            params[self.config.api_key_field] = api_key
+    async def request_callback(self, result: Result, setup_info):
+        yield
 
-    async def process_request_callback(self, result_type: ResultType, content):
-        pass
-
-    async def request_callback(self, result: Result, endpoint: str, params: dict, data: dict, _):
-        result_type, content = await self.fetch_content(result)
-        modified_content = await self.process_request_callback(result_type, content)
-        if modified_content is None:
-            modified_content = content
-        yield modified_content
-
-    async def _make_request_cleanup(self, api_key):
-        if api_key:
-            assert isinstance(self.semaphores, dict)
-            self.semaphores[api_key].release()
-            self.api_keys_queue.put_nowait(api_key)
+    async def make_request_cleanup(self, url: str, api_key: Optional[str] = None):
+        if api_key is not None:
+            state = self.get_state(url)
+            state.semaphores[api_key].release()
+            state.api_keys_queue.put_nowait(api_key)

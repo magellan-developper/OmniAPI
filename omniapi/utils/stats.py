@@ -1,9 +1,8 @@
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List
 
-from aiohttp import TraceConfig
 from aiohttp.client import ClientResponse
 
 
@@ -14,7 +13,7 @@ def calculate_percentile(lst: list, percentile: float):
     return (lst[int(index)] + lst[int(index) + 1]) / 2
 
 
-def calculate_stats(lst: list[float], percentiles=(0.95, 0.99)):
+def calculate_stats(lst: List[float], percentiles=(0.95, 0.99)):
     lst.sort()
     n = len(lst)
     mean = sum(lst) / n
@@ -37,22 +36,23 @@ class ClientStats:
 
     timeouts: int = 0
     authentication_failure: int = 0
-    retry_counts: int = 0
     rate_limit_exceeded: int = 0
-    dns_cache_hit: int = 0
 
     start_time: float = time.time()
-    response_times: dict = field(default_factory=dict)
+
     content_types: Counter = field(default_factory=Counter)
     status_codes: Counter = field(default_factory=Counter)
-    api_key_usage: Counter = field(default_factory=Counter)
-    method_api_usage: Counter = field(default_factory=Counter)
+    method_count: Counter = field(default_factory=Counter)
 
-    def add_response(self, response: ClientResponse, api_key: Optional[str] = None):
-        # self.add_status_code(response.status)
-        self.add_method(response.method)
-        if api_key:
-            self.add_api_key(api_key)
+    def add_request(self, method: str):
+        self.total_requests += 1
+        self.method_count.update([method])
+
+    def add_response(self, response: ClientResponse):
+        self.add_status_code(response.status)
+
+        if 'Content-Type' in response.headers:
+            self.content_types.update([response.headers['Content-Type']])
 
     def add_status_code(self, status_code: int):
         self.status_codes.update([status_code])
@@ -71,20 +71,12 @@ class ClientStats:
         elif status_code == 429:
             self.rate_limit_exceeded += 1
 
-    def add_response_time(self, endpoint: str, response_time: float):
-        if endpoint not in self.response_times:
-            self.response_times[endpoint] = []
-        self.response_times[endpoint].append(response_time)
-
-    def add_method(self, method: str):
-        self.method_api_usage.update([method])
-
-    def add_api_key(self, api_key: str):
-        self.api_key_usage.update([api_key])
+    def add_network_error(self):
+        self.network_errors += 1
 
     @property
     def total_errors(self):
-        return self.client_errors + self.server_errors + self.network_errors
+        return self.client_errors + self.server_errors + self.network_errors + self.timeouts
 
     @property
     def error_rate(self):
@@ -105,23 +97,12 @@ class ClientStats:
                 'Server Errors': self.server_errors,
                 'Network Errors': self.network_errors,
                 'Timeout Counts': self.timeouts,
-                'Error Rates': self.error_rate,
-                'DNS Cache Hit': self.dns_cache_hit}
+                'Error Rates': self.error_rate}
 
     def full_stats(self):
         return {
             **self.quick_stats(),
-            'Response Times': self.response_times,
             'Content Types': self.content_types,
             'Status Codes': self.status_codes,
-            'API Key Usage': self.api_key_usage,
-            'Request Methods': self.method_api_usage
+            'Request Methods': self.method_count
         }
-
-
-class StatsTraceConfig(TraceConfig):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        stats = ClientStats()
-    def on_request_start(self):
-        pass

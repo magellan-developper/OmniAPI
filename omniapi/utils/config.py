@@ -1,16 +1,16 @@
 import datetime
 from abc import ABCMeta
 from dataclasses import dataclass, asdict
-from ssl import SSLContext
 from typing import Optional, Sequence, Union
+from urllib.parse import urlparse
 
 from aiohttp import BasicAuth, BaseConnector
 from aiohttp.abc import AbstractCookieJar
 from aiohttp_retry import RetryOptionsBase
 
 from omniapi.utils.download import FileNameMode
-from omniapi.utils.helper import numeric
 from omniapi.utils.types import PathType
+from omniapi.utils.types import numeric
 
 
 @dataclass
@@ -21,10 +21,19 @@ class BaseConfig(metaclass=ABCMeta):
 
 @dataclass
 class APIConfig(BaseConfig):
-    base_url: Optional[str] = None
+    _base_url: Optional[str] = None
+
+    @property
+    def base_url(self) -> Optional[str]:
+        return self._base_url
+
+    @base_url.setter
+    def base_url(self, _base_url: Optional[str] = None):
+        if _base_url is not None:
+            self._base_url = urlparse(_base_url).netloc
 
     # Request Rate
-    max_requests_per_interval: Union[Sequence[numeric], numeric] = 5
+    max_requests_per_interval: Union[Sequence[numeric], numeric] = 0
     interval_unit: Union[Sequence[datetime.timedelta], datetime.timedelta] = datetime.timedelta(seconds=1)
     max_concurrent_requests: int = 1
 
@@ -51,11 +60,7 @@ class SessionConfig(BaseConfig):
     cookie_jar: Optional[AbstractCookieJar] = None
     cookies: Optional[dict] = None
     headers: Optional[dict] = None
-    ssl: Optional[Union[bool, SSLContext]] = None
     trust_env: bool = False
-    proxy: Optional[str] = None
-    proxy_auth: Optional[BasicAuth] = None
-    proxies: Optional[Sequence[str]] = None
 
 
 @dataclass
