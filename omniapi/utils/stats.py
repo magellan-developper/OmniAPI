@@ -1,27 +1,8 @@
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import List
 
 from aiohttp.client import ClientResponse
-
-
-def calculate_percentile(lst: list, percentile: float):
-    index = percentile * (len(lst) - 1)
-    if index == int(index):
-        return lst[int(index)]
-    return (lst[int(index)] + lst[int(index) + 1]) / 2
-
-
-def calculate_stats(lst: List[float], percentiles=(0.95, 0.99)):
-    lst.sort()
-    n = len(lst)
-    mean = sum(lst) / n
-    result = {'min': min(lst), 'mean': mean}
-    for percentile in percentiles:
-        result[f"{percentile * 100:g}%"] = calculate_percentile(lst, percentile)
-    result['max'] = max(lst)
-    return result
 
 
 @dataclass
@@ -41,12 +22,14 @@ class ClientStats:
     start_time: float = time.time()
 
     content_types: Counter = field(default_factory=Counter)
+    endpoint_count: Counter = field(default_factory=Counter)
     status_codes: Counter = field(default_factory=Counter)
     method_count: Counter = field(default_factory=Counter)
 
-    def add_request(self, method: str):
+    def add_request(self, netloc: str, method: str):
         self.total_requests += 1
         self.method_count.update([method])
+        self.endpoint_count.update([netloc])
 
     def add_response(self, response: ClientResponse):
         self.add_status_code(response.status)
@@ -86,7 +69,7 @@ class ClientStats:
     def total_time(self):
         return time.time() - self.start_time
 
-    def quick_stats(self):
+    def get_stats(self):
         average_request_rate = self.total_time / self.total_requests
         return {'Total Requests': self.total_requests,
                 'Average Request Rate': average_request_rate,
@@ -97,12 +80,9 @@ class ClientStats:
                 'Server Errors': self.server_errors,
                 'Network Errors': self.network_errors,
                 'Timeout Counts': self.timeouts,
-                'Error Rates': self.error_rate}
-
-    def full_stats(self):
-        return {
-            **self.quick_stats(),
-            'Content Types': self.content_types,
-            'Status Codes': self.status_codes,
-            'Request Methods': self.method_count
-        }
+                'Error Rates': self.error_rate,
+                'Endpoint Count': self.endpoint_count,
+                'Content Types': self.content_types,
+                'Status Codes': self.status_codes,
+                'Request Methods': self.method_count
+                }

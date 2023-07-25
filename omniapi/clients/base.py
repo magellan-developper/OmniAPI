@@ -15,7 +15,7 @@ from aiohttp_retry import RetryClient
 from tqdm import tqdm
 
 from omniapi.utils.config import APIConfig, SessionConfig
-from omniapi.utils.download import FileNameMode
+from omniapi.utils.download import FileNameStrategy
 from omniapi.utils.exception import raise_exception
 from omniapi.utils.helper import get_wait_time
 from omniapi.utils.result import Result, ResultType
@@ -26,7 +26,7 @@ from omniapi.utils.types import numeric
 
 
 class BaseClient(ABC):
-    """Base Class for API Clients"""
+    """Base Class for Request Clients"""
     logger = logging.getLogger(__name__)
     clients = []
     stats = ClientStats()
@@ -40,7 +40,7 @@ class BaseClient(ABC):
                  max_redirects: int = 0,
                  timeout: float = 10.0,
                  files_download_directory: PathType = None,
-                 file_name_mode: FileNameMode = FileNameMode.URL_HASH_MD5,
+                 file_name_mode: FileNameStrategy = FileNameStrategy.URL_HASH_MD5,
                  error_strategy: str = 'log',
                  display_progress_bar: bool = False, *,
                  auth: Optional[BasicAuth] = None,
@@ -49,7 +49,6 @@ class BaseClient(ABC):
                  cookies: Optional[dict] = None,
                  headers: Optional[dict] = None,
                  trust_env: bool = False):
-
         if files_download_directory is not None:
             files_download_directory = Path(files_download_directory)
             files_download_directory.mkdir(exist_ok=True, parents=True)
@@ -153,7 +152,7 @@ class BaseClient(ABC):
             else:
                 error_handling_strategy = error_strategy
             raise_exception(f"Base URL {base_url} has already been configured, overwriting settings...",
-                            error_handling_strategy=error_handling_strategy, exception_type='warning',
+                            error_strategy=error_handling_strategy, exception_type='warning',
                             logger=self.logger)
 
         # API Config Settings
@@ -265,7 +264,7 @@ class BaseClient(ABC):
         config = self.get_config(url)
 
         parsed_url = urlparse(url)
-        self.stats.add_request(method)
+        self.stats.add_request(parsed_url.netloc, method)
 
         try:
             async with state.client.request(
@@ -379,4 +378,4 @@ class BaseClient(ABC):
     async def __aexit__(self, *args):
         for client in self.clients:
             await client.close()
-        print(self.stats.full_stats())
+        print(self.stats.get_stats())

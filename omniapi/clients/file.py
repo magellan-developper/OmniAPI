@@ -7,6 +7,11 @@ from omniapi.utils.types import StringSequence, OptionalDictSequence
 
 
 class JsonFileClient(APIClient):
+    """Class to download API content and store the results in a JSON file.
+        The JSON file is organized into 3 sections: json, text, and file.
+        The `json` and `text` sections store responses with JSON and TEXT type.
+        The `file` section stores the url, file path, and checksum of the files downloaded."""
+
     def __init__(self, export_results_path: str, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.export_results_path = export_results_path

@@ -7,6 +7,8 @@ from omniapi.utils.result import Result
 
 
 class APIClient(BaseClient, ABC):
+    """Base class for API Clients"""
+
     logger = logging.Logger(__name__)
 
     def __init__(self, *args, **kwargs):
@@ -34,9 +36,6 @@ class APIClient(BaseClient, ABC):
         else:
             result_type, content = await result.download()
         return result_type, content
-
-    async def request_callback(self, result: Result, setup_info):
-        yield
 
     async def make_request_cleanup(self, url: str, api_key: Optional[str] = None):
         if api_key is not None:

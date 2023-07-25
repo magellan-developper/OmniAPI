@@ -1,6 +1,7 @@
 import datetime
 from abc import ABCMeta
 from dataclasses import dataclass, asdict
+from enum import Enum, auto
 from typing import Optional, Sequence, Union
 from urllib.parse import urlparse
 
@@ -8,9 +9,15 @@ from aiohttp import BasicAuth, BaseConnector
 from aiohttp.abc import AbstractCookieJar
 from aiohttp_retry import RetryOptionsBase
 
-from omniapi.utils.download import FileNameMode
 from omniapi.utils.types import PathType
 from omniapi.utils.types import numeric
+
+
+class FileNameStrategy(Enum):
+    UNIQUE_ID = auto()
+    FILE_NAME = auto()
+    URL_HASH_MD5 = auto()
+    URL_HASH_SHA1 = auto()
 
 
 @dataclass
@@ -47,7 +54,7 @@ class APIConfig(BaseConfig):
 
     # Export Results Path
     files_download_directory: PathType = None
-    file_name_mode: FileNameMode = FileNameMode.URL_HASH_MD5
+    file_name_mode: FileNameStrategy = FileNameStrategy.URL_HASH_MD5
 
     # User Settings
     display_progress_bar: bool = False
