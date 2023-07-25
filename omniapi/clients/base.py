@@ -337,11 +337,11 @@ class BaseClient(ABC):
 
     async def schedule_requests(self,
                                 methods: StringSequence,
-                                endpoints: StringSequence,
+                                urls: StringSequence,
                                 data_list: OptionalDictSequence,
                                 settings: OptionalDictSequence, ):
         tasks = [asyncio.create_task(self._get_request_handler(method)(endpoint, data, s))
-                 for method, endpoint, data, s in self._package_requests(methods, endpoints, data_list, settings)]
+                 for method, endpoint, data, s in self._package_requests(methods, urls, data_list, settings)]
         if self.display_progress_bar:
             pbar = tqdm()
             while tasks:
@@ -357,20 +357,20 @@ class BaseClient(ABC):
 
     async def run(self,
                   methods: StringSequence,
-                  endpoints: StringSequence,
+                  urls: StringSequence,
                   data_list: OptionalDictSequence = None,
                   settings: OptionalDictSequence = None):
-        await self.schedule_requests(methods, endpoints, data_list, settings)
+        await self.schedule_requests(methods, urls, data_list, settings)
 
-    async def get(self, endpoints: StringSequence,
+    async def get(self, urls: StringSequence,
                   data_list: OptionalDictSequence = None,
                   settings: OptionalDictSequence = None):
-        await self.run("GET", endpoints, data_list, settings)
+        await self.run("GET", urls, data_list, settings)
 
-    async def post(self, endpoints: StringSequence,
+    async def post(self, urls: StringSequence,
                    data_list: OptionalDictSequence = None,
                    settings: OptionalDictSequence = None):
-        await self.run("POST", endpoints, data_list, settings)
+        await self.run("POST", urls, data_list, settings)
 
     async def __aenter__(self):
         return self
