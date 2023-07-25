@@ -15,9 +15,12 @@ def get_single_wait_time(max_requests_per_interval: Union[int, float],
     """Gets the wait time, given a max_requests_per_interval and interval.
         If max_requests_per_interval is 0 or negative, the function returns a wait time of 0.
 
-    :param max_requests_per_interval: Number of requests allowed per interval
-    :param interval: Timedelta object that represents the interval
-    :return: Total number of seconds to wait
+    Args:
+        max_requests_per_interval (Union[int, float]): The directory path where the file should be downloaded.
+        interval (datetime.timedelta): Number of requests allowed per interval
+
+    Returns:
+        (float): Total number of seconds to wait
     """
     if max_requests_per_interval <= 0:
         return 0
@@ -29,9 +32,12 @@ def get_wait_time(config: APIConfig,
     """Gets the maximum wait time, given a series of max_request_per_interval and interval_unit.
         If both max_requests_per_interval and interval_unit are lists / tuples, they must have the same length.
 
-    :param config: Config of API Client
-    :param logger: Logger for logging errors if logging exceptions
-    :return: Maximum wait time in seconds
+    Args:
+        config (APIConfig): Config of API Client
+        logger (Logger): Logger for logging errors if logging exceptions
+
+    Returns:
+        (float): Maximum wait time in seconds
     """
     max_requests_per_interval = config.max_requests_per_interval
     interval_unit = config.interval_unit
@@ -56,5 +62,12 @@ def get_wait_time(config: APIConfig,
 
 
 async def write_json(path: Path, data):
+    """
+    Asynchronously writes JSON data to a file.
+
+    Args:
+        path (Path): The path of the file where the JSON data should be written.
+        data (Any): The data to be written in JSON format.
+    """
     async with aiofiles.open(path, mode='w') as f:
         await f.write(json.dumps(data))

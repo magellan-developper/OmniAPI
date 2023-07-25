@@ -9,10 +9,11 @@ def raise_exception(message: str,
                     logger: Optional[logging.Logger] = None):
     """Helper function to raise / log exceptions based on ERROR_HANDLING_STRATEGY in settings
 
-    :param message: Exception Message
-    :param error_strategy: Method to handle errors. Can be either 'log', 'raise', or 'ignore'.
-    :param exception_type: Type of exception. Can be either 'error' or 'warning'
-    :param logger: Logger of API Client
+    Args:
+        message (str): Exception Message
+        error_strategy (str): Method to handle errors. Can be either 'log', 'raise', or 'ignore'.
+        exception_type (str): Type of exception. Can be either 'error' or 'warning'
+        logger (logging.Logger, optional): Logger of API Client
     """
     if error_strategy not in {'raise', 'log', 'ignore'}:
         raise RuntimeError("Error Handling Strategy in settings must be either 'raise', 'log', or 'ignore'!")

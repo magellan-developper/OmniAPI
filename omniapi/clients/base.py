@@ -26,8 +26,34 @@ from omniapi.utils.types import numeric
 
 
 class BaseClient(ABC):
-    """Base Class for Request Clients"""
+    """
+    Abstract Base Class for Request Clients.
+
+    Args:
+        max_requests_per_interval (Union[Sequence[numeric], numeric], optional): Maximum number of requests per interval.
+            Defaults to 5.
+        interval_unit (Union[Sequence[datetime.timedelta], datetime.timedelta], optional): Time interval for requests.
+            Defaults to datetime.timedelta(seconds=1).
+        max_concurrent_requests (int, optional): Maximum number of concurrent requests. Defaults to 1.
+        api_keys (Optional[Sequence[str]], optional): Sequence of API keys to be used. Defaults to None.
+        allow_redirects (bool, optional): Whether redirects should be allowed. Defaults to True.
+        max_redirects (int, optional): Maximum number of redirects allowed. Defaults to 0.
+        timeout (float, optional): Request timeout in seconds. Defaults to 10.0.
+        files_download_directory (PathType, optional): Path to the directory where files should be downloaded. Defaults to None.
+        file_name_mode (FileNameStrategy, optional): Strategy for naming files. Defaults to FileNameStrategy.URL_HASH_MD5.
+        error_strategy (str, optional): Strategy for error handling. Defaults to 'log'.
+        display_progress_bar (bool, optional): Whether to display a progress bar. Defaults to False.
+        auth (Optional[BasicAuth], optional): Basic auth credentials. Defaults to None.
+        connector (Optional[BaseConnector], optional): Connector to use. Defaults to None.
+        cookie_jar (Optional[AbstractCookieJar], optional): Cookie jar to use. Defaults to None.
+        cookies (Optional[dict], optional): Cookies to use. Defaults to None.
+        headers (Optional[dict], optional): Headers to use. Defaults to None.
+        trust_env (bool, optional): Whether to trust environment variables for things like proxies. Defaults to False.
+    """
+
     logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+
     clients = []
     stats = ClientStats()
 
@@ -88,18 +114,49 @@ class BaseClient(ABC):
         self.tasks = []
 
     @classmethod
-    def from_config(cls, api_config: APIConfig,
-                    session_config: SessionConfig = SessionConfig()):
+    def from_config(cls, api_config: APIConfig, session_config: SessionConfig = SessionConfig()):
+        """
+        Creates an instance of the BaseClient class using API and Session configurations.
+
+        Args:
+            api_config (APIConfig): Configuration for the API client.
+            session_config (SessionConfig, optional): Configuration for the session. Defaults to SessionConfig().
+
+        Returns:
+            BaseClient: Instance of the BaseClient class.
+        """
+
         return BaseClient(
             **api_config.to_dict(),
             **session_config.to_dict()
         )
 
     def _get_client(self, endpoint: Optional[str] = None):
+        """
+        Retrieves the client associated with the specified endpoint.
+
+        Args:
+            endpoint (Optional[str], optional): The endpoint for which to get the client. Defaults to None.
+
+        Returns:
+            Client: The client associated with the specified endpoint.
+        """
+
         return self.endpoint_states[endpoint].client
 
     def _initialize_client(self, api_config: APIConfig,
                            session_config: Optional[SessionConfig] = None):
+        """
+        Initializes a new client using the specified API and Session configurations.
+
+        Args:
+            api_config (APIConfig): Configuration for the API client.
+            session_config (Optional[SessionConfig], optional): Configuration for the session. Defaults to None.
+
+        Returns:
+            ClientState: A state object representing the client's state.
+        """
+
         num_api_keys = 0 if api_config.api_keys is None else len(api_config.api_keys)
         api_keys_queue = asyncio.Queue() if num_api_keys > 0 else None
 
@@ -145,6 +202,10 @@ class BaseClient(ABC):
                      file_name_mode=None, error_strategy=None, display_progress_bar=None,
                      auth=None, connector=None, cookie_jar=None, cookies=None, headers=None, trust_env=None,
                      api_config: Optional[APIConfig] = None, session_config: Optional[SessionConfig] = None):
+        """
+        Adds settings to the client for a specific base URL. Overwrites the settings if they are already configured.
+
+        """
         base_url = urlparse(url).netloc
         if base_url in self.endpoint_configs:
             if error_strategy is None:
@@ -206,6 +267,13 @@ class BaseClient(ABC):
 
     @staticmethod
     async def _sleep_for_rate_limit(state: ClientState, api_key=None):
+        """
+        Causes the calling coroutine to sleep for the appropriate amount of time to respect rate limits.
+
+        Args:
+            state (ClientState): The state of the client.
+            api_key (str, optional): The API key to consider for rate limiting. Defaults to None.
+        """
         semaphore = state.semaphores[api_key]
         async with semaphore:
             last_request_time = state.last_request_time[api_key]
@@ -216,34 +284,106 @@ class BaseClient(ABC):
 
     @staticmethod
     def get_hash(method: str, url: str, hash_items):
+        """
+        Returns a hash value for the given method, URL, and hash items.
+        This will help the API client know which APIs have been requested before and skip those.
+
+        Args:
+            method (str): The request method.
+            url (str): The request URL.
+            hash_items (dict): Additional items to include in the hash.
+
+        Returns:
+            int: The hash value.
+        """
         return hash(hash(method) + hash(url) + hash(hash_items))
 
     @abstractmethod
     async def request_callback(self, result: Result, setup_info):
+        """
+        Abstract method that must be overridden in derived classes. Called after a request has been made.
+
+        Args:
+            result (Result): The result of the request.
+            setup_info (Any): Setup information for the request.
+        """
         yield
 
     async def make_request_setup(self, url: str) -> Any:
+        """
+        Setup method to be overridden in derived classes. Called before a request is made.
+
+        Args:
+            url (str): The URL of the request.
+
+        Returns:
+            Any: Returns anything.
+        """
         pass
 
     async def make_request_cleanup(self, url: str, setup_info):
+        """
+        Cleanup method to be overridden in derived classes. Called after a request is made.
+
+        Args:
+            url (str): The URL of the request.
+            setup_info (Any): Setup information for the request.
+        """
         pass
 
     def setup_request(self, url: str, headers: dict, data: dict, setup_info: Any):
+        """
+        Setup method to be overridden in derived classes. Called before a request is made.
+
+        Args:
+            url (str): The URL of the request.
+            headers (dict): Headers for the request.
+            data (dict): Data to be sent with the request.
+            setup_info (Any): Setup information for the request.
+        """
         pass
 
-    def get_state(self, url: str):
+    def get_state(self, url: str) -> ClientState:
+        """
+        Returns the state of the endpoint.
+
+        Args:
+           url (str): The URL of the endpoint.
+
+        Returns:
+           ClientState: The state of the endpoint.
+        """
         if (base_url := urlparse(url).netloc) in self.endpoint_states:
             return self.endpoint_states[base_url]
         else:
             return self.endpoint_states[None]
 
-    def get_config(self, url: Optional[str] = None):
+    def get_config(self, url: Optional[str] = None) -> APIConfig:
+        """
+        Returns the configuration for the endpoint.
+
+        Args:
+            url (str, optional): The URL of the endpoint.
+
+        Returns:
+            APIConfig: The configuration for the endpoint.
+        """
         if url is not None and (base_url := urlparse(url).netloc) in self.endpoint_configs:
             return self.endpoint_configs[base_url]
         else:
             return self.endpoint_configs[None]
 
     async def _make_request(self, method: str, url: str, data: dict = None, kwargs: dict = None):
+        """
+        Sends a request to a URL and handles the response.
+
+        Args:
+            method (str): The HTTP method (GET or POST).
+            url (str): The URL of the endpoint.
+            data (dict, optional): A dictionary containing the request data.
+            kwargs (dict, optional): A dictionary containing additional parameters.
+                This includes information such as proxies, proxy authentication, and SSL verification information.
+        """
         new_requests = []
 
         # Setup headers
@@ -302,12 +442,40 @@ class BaseClient(ABC):
                     self.tasks.append(asyncio.create_task(self._get_request_handler(method)(url, data, kwargs)))
 
     async def _get(self, url: str, params: dict = None, kwargs: dict = None):
+        """
+        Sends a GET request to a URL and handles the response.
+
+        Args:
+            url (str): The URL of the endpoint.
+            params (dict, optional): A dictionary containing the request parameters.
+            kwargs (dict, optional): A dictionary containing additional parameters.
+        """
         await self._make_request("GET", url, data=params, kwargs=kwargs)
 
     async def _post(self, url: str, data: dict = None, kwargs: dict = None):
+        """
+        Sends a POST request to a URL and handles the response.
+
+        Args:
+            url (str): The URL of the endpoint.
+            data (dict, optional): A dictionary containing the request data.
+            kwargs (dict, optional): A dictionary containing additional parameters.
+        """
         await self._make_request("POST", url, data=data, kwargs=kwargs)
 
     def _get_request_handler(self, method) -> Callable[[str, dict, dict], Coroutine]:
+        """
+        Returns the appropriate request handler based on the method.
+
+        Args:
+            method (str): The HTTP method (GET or POST).
+
+        Returns:
+            Callable[[str, dict, dict], Coroutine]: The request handler function.
+
+        Raises:
+            ValueError: If the method is not GET or POST.
+        """
         method = method.upper()
         if method == 'GET':
             return self._get
@@ -319,6 +487,18 @@ class BaseClient(ABC):
     @staticmethod
     def _package_requests(methods: StringSequence, endpoints: StringSequence,
                           data_list: OptionalDictSequence, settings: OptionalDictSequence):
+        """
+        Packages the request details for multiple requests.
+
+        Args:
+            methods (StringSequence): The HTTP methods for the requests.
+            endpoints (StringSequence): The endpoints for the requests.
+            data_list (OptionalDictSequence): The data for the requests.
+            settings (OptionalDictSequence): The settings for the requests.
+
+        Yields:
+            tuple: The details for each request.
+        """
         methods = [methods] if isinstance(methods, str) else methods
         endpoints = [endpoints] if isinstance(endpoints, str) else endpoints
         data_list = [data_list] if isinstance(data_list, dict) or data_list is None else data_list
@@ -335,11 +515,21 @@ class BaseClient(ABC):
         for _ in range(max_length):
             yield next(methods), next(endpoints), next(data_list), next(settings)
 
-    async def schedule_requests(self,
-                                methods: StringSequence,
-                                urls: StringSequence,
-                                data_list: OptionalDictSequence,
-                                settings: OptionalDictSequence, ):
+    async def execute_requests(self,
+                               methods: StringSequence,
+                               urls: StringSequence,
+                               data_list: OptionalDictSequence,
+                               settings: OptionalDictSequence):
+        """
+        Executes the requests. Displays a progress bar if `self.display_progress_bar` is set to True.
+
+        Args:
+            methods (StringSequence): The HTTP methods for the requests.
+            urls (StringSequence): The endpoints for the requests.
+            data_list (OptionalDictSequence): The data for the requests.
+            settings (OptionalDictSequence): The settings for the requests.
+        """
+
         tasks = [asyncio.create_task(self._get_request_handler(method)(endpoint, data, s))
                  for method, endpoint, data, s in self._package_requests(methods, urls, data_list, settings)]
         if self.display_progress_bar:
@@ -360,22 +550,59 @@ class BaseClient(ABC):
                   urls: StringSequence,
                   data_list: OptionalDictSequence = None,
                   settings: OptionalDictSequence = None):
-        await self.schedule_requests(methods, urls, data_list, settings)
+        """
+        Runs the client with the provided request details.
+
+        Args:
+            methods (StringSequence): The HTTP methods for the requests.
+            urls (StringSequence): The endpoints for the requests.
+            data_list (OptionalDictSequence, optional): The data for the requests.
+            settings (OptionalDictSequence, optional): The settings for the requests.
+        """
+        await self.execute_requests(methods, urls, data_list, settings)
 
     async def get(self, urls: StringSequence,
                   data_list: OptionalDictSequence = None,
                   settings: OptionalDictSequence = None):
+        """
+        Runs the client with the GET method.
+
+        Args:
+            urls (StringSequence): The endpoints for the requests.
+            data_list (OptionalDictSequence, optional): The data for the requests.
+            settings (OptionalDictSequence, optional): The settings for the requests.
+        """
         await self.run("GET", urls, data_list, settings)
 
     async def post(self, urls: StringSequence,
                    data_list: OptionalDictSequence = None,
                    settings: OptionalDictSequence = None):
+        """
+        Runs the client with the POST method.
+
+        Args:
+            urls (StringSequence): The endpoints for the requests.
+            data_list (OptionalDictSequence, optional): The data for the requests.
+            settings (OptionalDictSequence, optional): The settings for the requests.
+        """
         await self.run("POST", urls, data_list, settings)
 
     async def __aenter__(self):
+        """
+        Defines what the context manager should do at the beginning of the block.
+
+        Returns:
+            BaseClient: Returns an instance of the API Client.
+        """
         return self
 
     async def __aexit__(self, *args):
+        """
+        Defines what the context manager should do at the end of the block.
+
+        Args:
+            *args: Dummy arguments to match signature of the __aexit__ protocol.
+        """
         for client in self.clients:
             await client.close()
-        print(self.stats.get_stats())
+        logging.info(self.stats.get_stats())

@@ -13,7 +13,7 @@ class APIClient(BaseClient, ABC):
     setting up requests, cleaning up requests, and processing responses.
 
     Attributes:
-    logger (logging.Logger): Logger for this class.
+        logger (logging.Logger): Logger for this class.
 
     """
 
@@ -29,10 +29,10 @@ class APIClient(BaseClient, ABC):
         Set up for making an API request. Handles rate limiting and acquiring API keys.
 
         Args:
-        url (str): The url of the request.
+            url (str): The url of the request.
 
         Returns:
-        Optional[str]: The API key for the request, if applicable.
+            Optional[str]: The API key for the request, if applicable.
 
         """
         state = self.get_state(url)
@@ -52,10 +52,10 @@ class APIClient(BaseClient, ABC):
         Gets the content of the result based on the content type in the response header.
 
         Args:
-        result (Result): The result object.
+            result (Result): The result object.
 
         Returns:
-        Tuple[ResultType, Any]: The result type and content.
+            Tuple[ResultType, Any]: The result type and content.
 
         """
         file_type = result.response.headers['Content-Type'].split(';')[0]
@@ -72,8 +72,8 @@ class APIClient(BaseClient, ABC):
         Clean up after making an API request. Handles releasing semaphores and returning API keys.
 
         Args:
-        url (str): The url of the request.
-        api_key (Optional[str], optional): The API key used in the request. Defaults to None.
+            url (str): The url of the request.
+            api_key (Optional[str], optional): The API key used in the request. Defaults to None.
 
         """
         if api_key is not None:

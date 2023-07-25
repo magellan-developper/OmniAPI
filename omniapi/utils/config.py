@@ -14,6 +14,8 @@ from omniapi.utils.types import numeric
 
 
 class FileNameStrategy(Enum):
+    """Enum for different file naming strategies."""
+
     UNIQUE_ID = auto()
     FILE_NAME = auto()
     URL_HASH_MD5 = auto()
@@ -22,12 +24,19 @@ class FileNameStrategy(Enum):
 
 @dataclass
 class BaseConfig(metaclass=ABCMeta):
+    """
+    Base configuration class, to be inherited by specific configuration classes.
+    Contains a method to convert configuration object to a dictionary.
+    """
+
     def to_dict(self):
+        """Convert the dataclass to a dictionary."""
         return asdict(self)
 
 
 @dataclass
 class APIConfig(BaseConfig):
+    """Configuration for an API client."""
     _base_url: Optional[str] = None
 
     @property
@@ -62,15 +71,11 @@ class APIConfig(BaseConfig):
 
 @dataclass
 class SessionConfig(BaseConfig):
+    """Configuration for a session."""
+
     auth: Optional[BasicAuth] = None
     connector: Optional[BaseConnector] = None
     cookie_jar: Optional[AbstractCookieJar] = None
     cookies: Optional[dict] = None
     headers: Optional[dict] = None
     trust_env: bool = False
-
-
-@dataclass
-class ClientConfig:
-    api: APIConfig
-    session: SessionConfig

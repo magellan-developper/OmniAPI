@@ -18,11 +18,15 @@ from omniapi.utils.exception import raise_exception
 
 
 def get_file_name(url: Union[str, URL], strategy: FileNameStrategy):
-    """Returns the name of the file to download based on the file name strategy chosen.
+    """
+    Determines the file name based on the provided file naming strategy.
 
-    :param url: Request URL
-    :param strategy: File naming strategy
-    :return: Download file name
+    Args:
+        url (Union[str, URL]): The URL from which the file is to be downloaded.
+        strategy (FileNameStrategy): The strategy to be used to name the file.
+
+    Returns:
+        The name for the file.
     """
     url = str(url)
     if strategy == FileNameStrategy.UNIQUE_ID:
@@ -38,12 +42,16 @@ def get_file_name(url: Union[str, URL], strategy: FileNameStrategy):
 async def download_file(response: ClientResponse,
                         filename: Union[Path, str],
                         chunk_size: int = 1024):
-    """Downloads the contents of a response to a file named `filename` and returns the md5 hash of the file.
+    """
+    Downloads a file given by a ClientResponse object and writes it to a file named `filename`.
 
-    :param response: Response of download request
-    :param filename: Name of downloaded file
-    :param chunk_size: Size of download chunk
-    :return: MD5 Hash of downloaded file
+    Args:
+       response (ClientResponse): The ClientResponse object with the file to download.
+       filename (Union[Path, str]): The name for the downloaded file.
+       chunk_size (int, optional): The size of chunks to write to the file. Default is 1024.
+
+    Returns:
+       The MD5 hash of the downloaded file.
     """
     hash_obj = hashlib.md5()
     async with aiofiles.open(filename, 'wb') as out_file:
@@ -56,13 +64,18 @@ async def download_file(response: ClientResponse,
 def get_file_extension(response: ClientResponse,
                        error_handling_strategy: str,
                        logger: Optional[logging.Logger] = None) -> Optional[str]:
-    """Returns the file extension based on the Content-Type and url of the response.
-
-    :param response: Response of request to download object
-    :param error_handling_strategy: Strategy to handle exception
-    :param logger: Logger of API Client
-    :return: File extension of the download response. Returns None if the type can't be guessed.
     """
+    Returns the file extension based on the Content-Type and url of the response.
+
+    Args:
+        response (ClientResponse): Response of request to download object.
+        error_handling_strategy (str): Strategy to handle exception.
+        logger (Optional[logging.Logger]): Logger of API Client.
+
+    Returns:
+        str: File extension of the download response. Returns None if the type can't be guessed.
+    """
+
     if 'Content-Type' in response.headers:
         content_type = response.headers['Content-Type']
         extension = mimetypes.guess_extension(content_type)
@@ -85,14 +98,18 @@ def get_file_extension(response: ClientResponse,
 def get_file_path(response: ClientResponse,
                   config: APIConfig,
                   logger: Optional[logging.Logger] = None) -> Path:
-    """Gets the download path of the file from the response.
-        Creates the parent directories if they do not exist.
-
-    :param response: Response of download request
-    :param config:
-    :param logger:
-    :return:
     """
+    Gets the download path of the file from the response. Creates the parent directories if they do not exist.
+
+    Args:
+        response (ClientResponse): Response of download request.
+        config (APIConfig): Configuration of API Client.
+        logger (Optional[logging.Logger]): Logger for logging.
+
+    Returns:
+        Path: Path object representing the download location of the file.
+    """
+
     download_directory = Path(config.files_download_directory)
     download_directory.mkdir(exist_ok=True, parents=True)
     file_name = Path(get_file_name(response.url, config.file_name_mode))
@@ -112,13 +129,18 @@ async def download_file_to_path(response: ClientResponse,
                                 download_dir: Optional[Union[str, Path]] = None,
                                 logger: Optional[logging.Logger] = None):
     """
+    Downloads a file to a specified path.
 
-    :param response:
-    :param config:
-    :param download_dir: Folder path relative to the files_download_directory to download content
-    :param logger:
-    :return:
+    Args:
+        response (ClientResponse): The HTTP response object.
+        config (APIConfig): The configuration object for the API.
+        download_dir (Optional[Union[str, Path]]): The directory to download the file to. Defaults to None.
+        logger (Optional[logging.Logger]): The logger to use. Defaults to None.
+
+    Returns:
+        dict: A dictionary containing information about the download including the url, path, and checksum.
     """
+
     base_dir = Path(config.files_download_directory)
     file_path = get_file_path(response, config, logger)
     if download_dir is not None:
