@@ -62,8 +62,8 @@ Let us try to customize the processing of the request. Instead of fetching only 
 In practice, you can use this method, to recursively fetch data from an entire website with minimal code, or download files and images from a URL in the returned response.
 
 ```python
+import asyncio
 from omniapi import APIClient, Response
-
 
 class CustomAPIClient(APIClient):
     async def request_callback(self, response: Response, setup_info):
@@ -79,9 +79,11 @@ class CustomAPIClient(APIClient):
         print(response.get_url())
 
 
-# Usage
-async with CustomAPIClient(max_requests_per_interval=5) as client:
-    await client.get('https://pokeapi.co/api/v2/pokemon/1')
+async def fetch_api():
+    async with CustomAPIClient(max_requests_per_interval=5) as client:
+        await client.get('https://pokeapi.co/api/v2/pokemon/1')
+
+asyncio.run(fetch_api())
 ```
 
 ### Step 4: Provide Feedback
