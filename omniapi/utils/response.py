@@ -136,7 +136,7 @@ class Response:
         total = self._get_paginate_elem(total_path, content, sep)
 
         if start + per_page < total:
-            return method, url, payload_method(start + per_page)
+            return ResultType.REQUEST, (method, url, payload_method(start + per_page))
 
     @staticmethod
     def _get_paginate_elem(path: str, content: dict, sep: str):
