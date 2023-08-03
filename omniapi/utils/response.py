@@ -2,13 +2,14 @@ import logging
 from enum import auto, Enum
 from pathlib import Path
 from typing import Optional, Union, Callable
+from aiohttp import ClientResponse
 
 from omniapi.utils.config import APIConfig
 from omniapi.utils.download import download_file_to_path
 from omniapi.utils.state import ClientState
 
 
-class ResultType(Enum):
+class ResponseType(Enum):
     """
     Enum representing the type of the result that can be returned by a request.
     """
@@ -18,9 +19,9 @@ class ResultType(Enum):
     REQUEST = auto()
 
 
-class Result:
+class Response:
     """
-    Class that encapsulates a result returned from a request.
+    Class that encapsulates a response returned from a request.
 
     Attributes:
         response: The aiohttp response object.
@@ -30,33 +31,36 @@ class Result:
 
     """
 
-    def __init__(self, response, config: APIConfig, state: ClientState, logger: logging.Logger):
+    def __init__(self, response: ClientResponse, config: APIConfig, state: ClientState, logger: logging.Logger):
         self.response = response
         self.config = config
         self.state = state
         self.logger = logger
+
+    def get_url(self):
+        return str(self.response.url)
 
     async def json(self):
         """
         Parses the response as a JSON.
 
         Returns:
-            (ResultType.JSON, dict): A tuple of ResultType.JSON and the parsed JSON content.
+            (ResponseType.JSON, dict): A tuple of ResultType.JSON and the parsed JSON content.
 
         """
         result = await self.response.json()
-        return ResultType.JSON, result
+        return ResponseType.JSON, result
 
     async def text(self):
         """
         Parses the response as a text.
 
         Returns:
-            (ResultType.TEXT, str): A tuple of ResultType.TEXT and the parsed text content.
+            (ResponseType.TEXT, str): A tuple of ResultType.TEXT and the parsed text content.
 
         """
         result = await self.response.json()
-        return ResultType.TEXT, result
+        return ResponseType.TEXT, result
 
     async def download(self, dir_path: Optional[Union[Path, str]] = None):
         """
@@ -66,7 +70,7 @@ class Result:
             dir_path (Union[Path, str], optional): The directory path where the file should be downloaded.
 
         Returns:
-            (ResultType.FILE, dict): A tuple of ResultType.FILE and a dictionary with the file details.
+            (ResponseType.FILE, dict): A tuple of ResultType.FILE and a dictionary with the file details.
 
         """
         result = await download_file_to_path(
@@ -75,7 +79,7 @@ class Result:
             dir_path,
             self.logger
         )
-        return ResultType.FILE, result
+        return ResponseType.FILE, result
 
     @staticmethod
     def get(url: str, params: Optional[dict] = None, settings: Optional[dict] = None):
@@ -88,10 +92,10 @@ class Result:
             settings (dict, optional): Additional settings for the request.
 
         Returns:
-            (ResultType.REQUEST, tuple): A tuple of ResultType.REQUEST and a tuple with the request details.
+            (ResponseType.REQUEST, tuple): A tuple of ResultType.REQUEST and a tuple with the request details.
 
         """
-        return ResultType.REQUEST, ("GET", url, params, settings)
+        return ResponseType.REQUEST, ("GET", url, params, settings)
 
     @staticmethod
     def post(url: str, data: Optional[dict] = None, settings: Optional[dict] = None):
@@ -104,10 +108,10 @@ class Result:
             settings (dict, optional): Additional settings for the request.
 
         Returns:
-            (ResultType.REQUEST, tuple): A tuple of ResultType.REQUEST and a tuple with the request details.
+            (ResponseType.REQUEST, tuple): A tuple of ResultType.REQUEST and a tuple with the request details.
 
         """
-        return ResultType.REQUEST, ("POST", url, data, settings)
+        return ResponseType.REQUEST, ("POST", url, data, settings)
 
     def paginate(self, url: str, content: dict, start_path: str, per_page_path: str,
                  total_path: str, payload_method: Callable[[int], dict], sep: str = '.'):

@@ -18,7 +18,7 @@ from omniapi.utils.config import APIConfig, SessionConfig
 from omniapi.utils.download import FileNameStrategy
 from omniapi.utils.exception import raise_exception
 from omniapi.utils.helper import get_wait_time
-from omniapi.utils.result import Result, ResultType
+from omniapi.utils.response import Response, ResponseType
 from omniapi.utils.state import ClientState
 from omniapi.utils.stats import ClientStats
 from omniapi.utils.types import PathType, OptionalDictSequence, StringSequence
@@ -283,7 +283,7 @@ class BaseClient(ABC):
             state.last_request_time[api_key] = time.monotonic()
 
     @staticmethod
-    def get_hash(method: str, url: str, hash_items):
+    def get_hash(method: str, url: str, hash_items: Optional[Any]):
         """
         Returns a hash value for the given method, URL, and hash items.
         This will help the API client know which APIs have been requested before and skip those.
@@ -299,12 +299,12 @@ class BaseClient(ABC):
         return hash(hash(method) + hash(url) + hash(hash_items))
 
     @abstractmethod
-    async def request_callback(self, result: Result, setup_info):
+    async def request_callback(self, result: Response, setup_info):
         """
         Abstract method that must be overridden in derived classes. Called after a request has been made.
 
         Args:
-            result (Result): The result of the request.
+            result (Response): The result of the request.
             setup_info (Any): Setup information for the request.
         """
         yield
@@ -410,12 +410,12 @@ class BaseClient(ABC):
             async with state.client.request(
                     method, url, headers=headers, **request_params, timeout=config.timeout, **kwargs) as response:
                 self.stats.add_response(response)
-                response_result = Result(response, config, state, self.logger)
+                response_result = Response(response, config, state, self.logger)
                 async for result in self.request_callback(response_result, setup_info):
                     if result is None:
                         continue
-                    result_type, content = result
-                    if result_type != ResultType.REQUEST:
+                    response_type, content = result
+                    if response_type != ResponseType.REQUEST:
                         continue
                     new_method, new_url, new_data, new_settings = content
                     new_parsed_url = urlparse(new_url)

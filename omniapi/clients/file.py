@@ -2,7 +2,7 @@ from pathlib import Path
 
 from omniapi.clients.api import APIClient
 from omniapi.utils.helper import write_json
-from omniapi.utils.result import Result, ResultType
+from omniapi.utils.response import ResponseType
 from omniapi.utils.types import StringSequence, OptionalDictSequence
 
 
@@ -31,28 +31,28 @@ class JsonFileClient(APIClient):
         """
         super().__init__(*args, **kwargs)
         self.export_results_path = export_results_path
-        self.results = {ResultType.JSON.name.lower(): [],
-                        ResultType.TEXT.name.lower(): [],
-                        ResultType.FILE.name.lower(): []}
+        self.results = {ResponseType.JSON.name.lower(): [],
+                        ResponseType.TEXT.name.lower(): [],
+                        ResponseType.FILE.name.lower(): []}
 
-    async def request_callback(self, result: Result, _):
+    async def process_request(self, response_type: ResponseType, content):
         """
         Callback function for request. It gets the content of the result
         and appends it to the corresponding section of the results.
 
         Args:
-            result (Result): The result object.
+            response_type (ResponseType): The result object.
+            content (Any): Content of the response
 
         Returns:
             Tuple[ResultType, Any]: The result type and content.
 
         """
 
-        result_type, content = await self.get_result_content(result)
-        if result_type in [ResultType.JSON, ResultType.TEXT, ResultType.FILE]:
-            key = result_type.name.lower()
+        if response_type in [ResponseType.JSON, ResponseType.TEXT, ResponseType.FILE]:
+            key = response_type.name.lower()
             self.results[key].append(content)
-        yield result_type, content
+        yield response_type, content
 
     async def export_results(self):
         """

@@ -140,7 +140,8 @@ async def download_file_to_path(response: ClientResponse,
     Returns:
         dict: A dictionary containing information about the download including the url, path, and checksum.
     """
-
+    if config.files_download_directory is None:
+        return None
     base_dir = Path(config.files_download_directory)
     file_path = get_file_path(response, config, logger)
     if download_dir is not None:

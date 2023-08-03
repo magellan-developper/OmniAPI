@@ -3,7 +3,7 @@ from abc import ABC
 from typing import Optional
 
 from omniapi.clients.base import BaseClient
-from omniapi.utils.result import Result
+from omniapi.utils.response import Response, ResponseType
 
 
 class APIClient(BaseClient, ABC):
@@ -47,25 +47,33 @@ class APIClient(BaseClient, ABC):
             return api_key
 
     @staticmethod
-    async def get_result_content(result: Result):
+    async def get_result_content(result: Response):
         """
         Gets the content of the result based on the content type in the response header.
 
         Args:
-            result (Result): The result object.
+            result (Response): The result object.
 
         Returns:
-            Tuple[ResultType, Any]: The result type and content.
+            Tuple[ResponseType, Any]: The result type and content.
 
         """
         file_type = result.response.headers['Content-Type'].split(';')[0]
         if file_type == 'text/plain':
-            result_type, content = await result.text()
+            response_type, content = await result.text()
         elif file_type == 'application/json':
-            result_type, content = await result.json()
+            response_type, content = await result.json()
         else:
-            result_type, content = await result.download()
-        return result_type, content
+            response_type, content = await result.download()
+        return response_type, content
+
+    async def request_callback(self, response: Response, setup_info):
+        response_type, content = await self.get_result_content(response)
+        async for item in self.process_request(response_type, content):
+            yield item
+
+    async def process_request(self, response_type: ResponseType, content):
+        yield
 
     async def make_request_cleanup(self, url: str, api_key: Optional[str] = None):
         """
